@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "name": "quote-desk",
+  "description": "ช่วย sales คำนวณราคาเสนอ ใช้ python tool ที่ทีมเขียนเองจากหน้าเว็บ",
+  "model": {
+    "connection": null,
+    "ref": "anthropic:claude-sonnet-4-6",
+    "temperature": 0
+  },
+  "instructions": "คุณช่วยทีม sales ออกใบเสนอราคา\n\nกฎ:\n- ราคาต้องมาจาก tool price_quote เท่านั้น ห้ามคำนวณเองในหัวเด็ดขาด\n- ถ้าลูกค้ายังไม่บอกจำนวน seat ให้ถามก่อน อย่าเดา\n- ถ้า needs_approval เป็น true ให้เตือนว่าต้องขออนุมัติจากหัวหน้าก่อนส่งลูกค้า\n- สรุปเป็นตารางสั้น ๆ แล้วปิดท้ายด้วยราคารวม",
+  "skills": [],
+  "memory": [],
+  "tools": [
+    {
+      "kind": "python",
+      "ref": "price_quote",
+      "description": "",
+      "code": "import math\nfrom datetime import date\n\n\ndef run(seats: int, plan: str = \"pro\", months: int = 12, discount_pct: float = 0.0) -> dict:\n    \"\"\"คำนวณราคาเสนอลูกค้าตามกฎราคาภายในของบริษัท\n\n    seats = จำนวนผู้ใช้, plan = free|pro|enterprise,\n    months = ระยะสัญญา, discount_pct = ส่วนลดที่ sales ขออนุมัติไว้\n    \"\"\"\n    base = {\"free\": 0, \"pro\": 350, \"enterprise\": 1200}\n    if plan not in base:\n        return {\"error\": f\"ไม่รู้จัก plan '{plan}' — มีแค่ {list(base)}\"}\n\n    # ขั้นบันไดตามจำนวน seat: ยิ่งเยอะยิ่งถูกต่อหัว\n    if seats >= 200:\n        tier_mult = 0.70\n    elif seats >= 50:\n        tier_mult = 0.85\n    else:\n        tier_mult = 1.0\n\n    # สัญญายาวได้ส่วนลดเพิ่ม แต่ไม่เกิน 15%\n    term_disc = min(0.15, math.floor(months / 12) * 0.05)\n\n    monthly = base[plan] * seats * tier_mult\n    total = monthly * months * (1 - term_disc) * (1 - discount_pct / 100)\n\n    return {\n        \"quoted_on\": date.today().isoformat(),\n        \"plan\": plan,\n        \"seats\": seats,\n        \"monthly_thb\": round(monthly, 2),\n        \"term_discount_pct\": round(term_disc * 100, 1),\n        \"sales_discount_pct\": discount_pct,\n        \"total_thb\": round(total, 2),\n        \"needs_approval\": discount_pct > 20 or total > 2_000_000,\n    }\n",
+      "input_schema": null,
+      "timeout_s": 10
+    },
+    {
+      "kind": "builtin",
+      "ref": "current_time",
+      "params": {}
+    }
+  ],
+  "subagents": [],
+  "middleware": [
+    {
+      "ref": "tool_call_log",
+      "params": {
+        "include_args": true
+      }
+    }
+  ],
+  "hitl": {
+    "interrupt_on": {}
+  },
+  "limits": {
+    "max_steps": 20,
+    "run_timeout_s": 120,
+    "max_tokens_per_run": 60000
+  },
+  "backend_preset": "state"
+}

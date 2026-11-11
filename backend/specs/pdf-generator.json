@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "name": "pdf-generator",
+  "description": "Agent ตัวอย่างที่มี Python Tool สำหรับสร้างไฟล์ PDF ให้ผู้ใช้ดาวน์โหลด (ผ่าน HTTP Link)",
+  "model": {
+    "connection": null,
+    "ref": "anthropic:claude-sonnet-4-6",
+    "temperature": 0
+  },
+  "instructions": "คุณคือ Agent สร้างรายงาน PDF สรุปผลการประมวลผล\n\nเมื่อผู้ใช้ขอให้สร้างรายงาน หรือให้ข้อมูลสรุปมา ให้จัดข้อมูลเป็น list แล้วส่งเข้า tool `create_pdf_report` ทันที\n\ntool จะคืน path ของไฟล์มา เช่น `/downloads/report.pdf` — ให้ตอบผู้ใช้โดย**พิมพ์ path นั้นออกมาตรง ๆ** หน้าเว็บจะแปลงเป็นปุ่มดาวน์โหลดให้เอง\nห้ามสร้างลิงก์ Markdown หรือ data URI เอง",
+  "skills": [],
+  "memory": [],
+  "tools": [
+    {
+      "kind": "python",
+      "ref": "create_pdf_report",
+      "description": "สร้างรายงาน PDF จาก list แล้วคืน path ของไฟล์ที่ดาวน์โหลดได้",
+      "code": "from fpdf import FPDF\n\n\ndef run(data_result: list, title: str = \"Report Result\") -> str:\n    \"\"\"สร้างไฟล์ PDF จากข้อมูล list ที่ส่งมา แล้วคืน path ของไฟล์\n\n    ใช้ save_file() เซฟลงโฟลเดอร์ดาวน์โหลด แล้วคืนแค่ path กลับไป\n    ไม่ส่งตัวไฟล์เป็น base64 เพราะไฟล์ใหญ่จะกิน context จนล้ม\n    และเบราว์เซอร์บล็อกลิงก์ data: อยู่แล้ว กดไม่ติด\n    \"\"\"\n    pdf = FPDF()\n    pdf.add_page()\n\n    pdf.set_font(\"helvetica\", size=16)\n    pdf.cell(200, 10, txt=title, ln=True, align=\"C\")\n    pdf.ln(10)\n\n    pdf.set_font(\"helvetica\", size=12)\n    for item in data_result:\n        pdf.cell(200, 10, txt=str(item), ln=True)\n\n    # dest='S' คืน str ที่เป็น latin-1 ต้อง encode ก่อนถึงจะเป็นไบต์ของ PDF จริง\n    blob = pdf.output(dest=\"S\").encode(\"latin-1\")\n\n    return save_file(\"report.pdf\", blob)\n",
+      "input_schema": null,
+      "timeout_s": 15
+    }
+  ],
+  "subagents": [],
+  "middleware": [],
+  "hitl": {
+    "interrupt_on": {}
+  },
+  "limits": {
+    "max_steps": 20,
+    "run_timeout_s": 120,
+    "max_tokens_per_run": 60000
+  },
+  "backend_preset": "state",
+  "version": 1
+}

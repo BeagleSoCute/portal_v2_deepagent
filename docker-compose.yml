@@ -1,0 +1,37 @@
+# Runs Agent Builder next to a local Portal stack (app-portal: `just up`).
+# No Traefik labels and no published port: the only way in is the route the Portal
+# writes when an admin registers the app with the address http://agents:8000.
+name: agent-builder
+
+services:
+  agents:
+    build: .
+    image: agent-builder
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # The same URLs the browser uses, so the token issuer and redirect URIs match.
+      AGENTS_APP_URL: http://agents.localhost
+      AGENTS_ISSUER: http://idp.localhost/realms/portal
+      AGENTS_PORTAL_URL: http://portal.localhost
+      AGENTS_CLIENT_ID: agents
+    volumes:
+      - agents-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks:
+      - portal
+
+networks:
+  # The Portal's network: Traefik reaches this service as `agents`, and this service
+  # reaches Keycloak as idp.localhost through Traefik's alias.
+  portal:
+    name: portal-local_default
+    external: true
+
+volumes:
+  agents-data:

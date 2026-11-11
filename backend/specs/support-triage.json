@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "name": "support-triage",
+  "description": "คัดกรองเคสซัพพอร์ต ตอบสั้น เป็นโครงสร้าง และต้องขออนุมัติก่อนดึงข้อมูลลูกค้า",
+  "model": { "ref": "anthropic:claude-sonnet-4-6", "temperature": 0 },
+  "instructions": "คุณคือระบบคัดกรองเคสซัพพอร์ต\n\nกฎ:\n- ตอบสั้นที่สุดเท่าที่ยังครบ ห้ามเกริ่นนำ ห้ามสรุปซ้ำ\n- ถ้ามี customer_id ให้ดึงข้อมูลจาก CRM ก่อนตัดสินใจเสมอ\n- ให้ผลลัพธ์เป็น 4 บรรทัดเป๊ะ ๆ: PRIORITY / REASON / OWNER / NEXT_ACTION\n- PRIORITY มีแค่ P1 P2 P3 ตามเกณฑ์ใน skill triage-rules\n- ห้ามเดาข้อมูลลูกค้า ถ้าไม่มี customer_id ให้ถามกลับหนึ่งคำถาม",
+  "skills": [
+    {
+      "name": "triage-rules",
+      "description": "เกณฑ์จัดลำดับความสำคัญของเคส ใช้ทุกครั้งที่ต้องให้ค่า PRIORITY",
+      "body": "# เกณฑ์จัดลำดับ\n\n| ระดับ | เงื่อนไข |\n|---|---|\n| P1 | ลูกค้า tier enterprise หรือ MRR > 50000 หรือระบบใช้งานไม่ได้ทั้งระบบ |\n| P2 | ลูกค้า tier pro หรือมี open_tickets ตั้งแต่ 3 ขึ้นไป |\n| P3 | นอกเหนือจากนั้น |\n\nถ้าเข้าหลายข้อ ให้เอาระดับที่สูงที่สุด\nOWNER: P1 -> oncall, P2 -> support-lead, P3 -> support-queue"
+    }
+  ],
+  "tools": [
+    { "kind": "builtin", "ref": "mock_crm_lookup", "params": {} },
+    { "kind": "builtin", "ref": "calculator", "params": {} }
+  ],
+  "subagents": [],
+  "middleware": [
+    { "ref": "pii_redaction", "params": { "entities": ["email", "phone_th"] } },
+    { "ref": "tool_call_log", "params": { "include_args": false } }
+  ],
+  "hitl": { "interrupt_on": { "mock_crm_lookup": true } },
+  "limits": { "max_steps": 20, "run_timeout_s": 120, "max_tokens_per_run": 60000 },
+  "backend_preset": "state"
+}
