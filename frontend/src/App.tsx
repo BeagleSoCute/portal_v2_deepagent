@@ -1,46 +1,12 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Route, Routes } from 'react-router-dom';
+import { Route, Routes } from 'react-router-dom';
 import { api, messageOf, Redirecting, type Me } from './api';
-import { AgentList } from './pages/AgentList';
+import { AgentsProvider } from './agents';
+import { Sidebar } from './components/Sidebar';
 import { Audit } from './pages/Audit';
 import { Connections } from './pages/Connections';
+import { Home } from './pages/Home';
 import { Workbench } from './pages/Workbench';
-
-function Topbar({ me }: { me?: Me }) {
-  return (
-    <header className="topbar">
-      <NavLink className="logo" to="/">
-        <span className="logo-mark" aria-hidden="true" />
-        Agent Builder
-      </NavLink>
-      {me && (
-        <>
-          <nav className="topnav" aria-label="เมนูหลัก">
-            <NavLink to="/" end>
-              Agents
-            </NavLink>
-            <NavLink to="/connections">Connections</NavLink>
-            <NavLink to="/audit">Audit</NavLink>
-          </nav>
-          {me.auth ? (
-            <div className="row">
-              <a href={me.portal_url}>กลับ Portal</a>
-              <span className="muted">{me.username}</span>
-              {/* A form post, so the browser follows the redirect to Keycloak's logout. */}
-              <form method="post" action="/auth/logout">
-                <button type="submit">ออกจากระบบ</button>
-              </form>
-            </div>
-          ) : (
-            <span className="demo-tag" title="ปิด login อยู่ ทุกคนที่เปิดหน้านี้ได้คือผู้ใช้เดียวกัน">
-              ไม่มี login
-            </span>
-          )}
-        </>
-      )}
-    </header>
-  );
-}
 
 function SignedIn() {
   const [me, setMe] = useState<Me | null>(null);
@@ -57,35 +23,35 @@ function SignedIn() {
 
   if (problem) {
     return (
-      <>
-        <Topbar />
-        <p className="page problems" role="alert">
-          ระบบขัดข้อง กรุณาลองใหม่อีกครั้ง ({problem})
-        </p>
-      </>
+      <p className="page problems" role="alert">
+        ระบบขัดข้อง กรุณาลองใหม่อีกครั้ง ({problem})
+      </p>
     );
   }
-  if (!me) return <Topbar />;
+  if (!me) return null;
 
   return (
-    <>
-      <Topbar me={me} />
-      <Routes>
-        <Route path="/" element={<AgentList />} />
-        <Route path="/agents/:id" element={<Workbench />} />
-        <Route path="/connections" element={<Connections />} />
-        <Route path="/audit" element={<Audit />} />
-        <Route path="*" element={<p className="page muted">ไม่พบหน้านี้</p>} />
-      </Routes>
-    </>
+    <AgentsProvider>
+      <div className="shell">
+        <Sidebar me={me} />
+        <div className="shell-main">
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/agents/:id" element={<Workbench />} />
+            <Route path="/connections" element={<Connections />} />
+            <Route path="/audit" element={<Audit />} />
+            <Route path="*" element={<p className="page muted">ไม่พบหน้านี้</p>} />
+          </Routes>
+        </div>
+      </div>
+    </AgentsProvider>
   );
 }
 
 function LoggedOut() {
   return (
     <>
-      <Topbar />
-      <main className="page">
+      <main className="page empty-state">
         <h1>ออกจากระบบแล้ว</h1>
         <p className="muted">session ของ Agent Builder และ Portal จบแล้ว</p>
         <p style={{ marginTop: 16 }}>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   api,
   type Connection,
@@ -10,6 +10,7 @@ import {
   type SubAgent,
   type Tool,
 } from '../api';
+import { Modal } from './Modal';
 import { Problems } from './Problems';
 import { PythonToolDialog } from './PythonToolDialog';
 
@@ -20,92 +21,96 @@ type Props = {
   onChange: (next: Spec) => void;
 };
 
-// `resetKey` changes when the draft was replaced from outside: saved, rolled back or discarded.
-type PanelProps = Props & { resetKey: number };
-
-const TABS = ['Basics', 'Tools', 'Skills', 'Subagents', 'Guardrails', 'JSON'] as const;
-type Tab = (typeof TABS)[number];
-
 const toolName = (tool: Tool) => (tool.kind === 'mcp' ? tool.server : tool.ref);
 
-function Basics({ draft, connections, onChange }: Props) {
+function ModelSection({ draft, connections, onChange }: Props) {
   const model = draft.model;
   const chosen = connections.find((c) => c.name === model.connection || c.id === model.connection);
 
   return (
     <>
       <label className="field">
-        คำอธิบาย
-        <input value={draft.description} onChange={(e) => onChange({ ...draft, description: e.target.value })} />
+        Connection
+        <select
+          value={chosen?.name ?? ''}
+          onChange={(e) => {
+            const next = connections.find((c) => c.name === e.target.value);
+            onChange({
+              ...draft,
+              model: { ...model, connection: next?.name ?? null, ref: next?.default_model || model.ref },
+            });
+          }}
+        >
+          <option value="">อ่านจาก environment</option>
+          {connections.map((c) => (
+            <option key={c.id} value={c.name}>
+              {c.name}
+            </option>
+          ))}
+        </select>
       </label>
-      <div className="grid-2">
-        <label className="field">
-          Connection
-          <select
-            value={chosen?.name ?? ''}
-            onChange={(e) => {
-              const next = connections.find((c) => c.name === e.target.value);
-              onChange({
-                ...draft,
-                model: { ...model, connection: next?.name ?? null, ref: next?.default_model || model.ref },
-              });
-            }}
-          >
-            <option value="">อ่านจาก environment</option>
-            {connections.map((c) => (
-              <option key={c.id} value={c.name}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          Model
-          <input
-            value={model.ref}
-            placeholder={chosen ? 'gpt-4o' : 'anthropic:claude-sonnet-4-6'}
-            onChange={(e) => onChange({ ...draft, model: { ...model, ref: e.target.value } })}
-          />
-        </label>
-      </div>
+      <label className="field">
+        Model
+        <input
+          value={model.ref}
+          placeholder={chosen ? 'gpt-4o' : 'anthropic:claude-sonnet-4-6'}
+          onChange={(e) => onChange({ ...draft, model: { ...model, ref: e.target.value } })}
+        />
+      </label>
       {model.connection && !chosen && (
         <p className="field-error">ไม่พบ connection ชื่อ {model.connection} ให้สร้างในหน้า Connections ก่อน</p>
       )}
+    </>
+  );
+}
+
+function InstructionsSection({ draft, onChange }: Props) {
+  return (
+    <>
+      <label className="field">
+        คำอธิบายสั้น
+        <input value={draft.description} onChange={(e) => onChange({ ...draft, description: e.target.value })} />
+      </label>
       <label className="field">
         Instructions
         <textarea
-          rows={10}
+          rows={12}
           value={draft.instructions}
           onChange={(e) => onChange({ ...draft, instructions: e.target.value })}
         />
       </label>
-      <div className="grid-2">
-        <label className="field">
-          จำนวน step สูงสุด
-          <input
-            type="number"
-            min={1}
-            max={500}
-            value={draft.limits.max_steps}
-            onChange={(e) =>
-              onChange({ ...draft, limits: { ...draft.limits, max_steps: Number(e.target.value) || 1 } })
-            }
-          />
-        </label>
-        <label className="field">
-          เวลาต่อ run (วินาที)
-          <input
-            type="number"
-            min={5}
-            max={3600}
-            value={draft.limits.run_timeout_s}
-            onChange={(e) =>
-              onChange({ ...draft, limits: { ...draft.limits, run_timeout_s: Number(e.target.value) || 5 } })
-            }
-          />
-        </label>
-      </div>
     </>
+  );
+}
+
+function LimitsSection({ draft, onChange }: Props) {
+  return (
+    <div className="grid-2">
+      <label className="field">
+        จำนวน step สูงสุด
+        <input
+          type="number"
+          min={1}
+          max={500}
+          value={draft.limits.max_steps}
+          onChange={(e) =>
+            onChange({ ...draft, limits: { ...draft.limits, max_steps: Number(e.target.value) || 1 } })
+          }
+        />
+      </label>
+      <label className="field">
+        เวลาต่อ run (วินาที)
+        <input
+          type="number"
+          min={5}
+          max={3600}
+          value={draft.limits.run_timeout_s}
+          onChange={(e) =>
+            onChange({ ...draft, limits: { ...draft.limits, run_timeout_s: Number(e.target.value) || 5 } })
+          }
+        />
+      </label>
+    </div>
   );
 }
 
@@ -152,7 +157,7 @@ function Tools({ draft, registry, onChange }: Props) {
                   <p className="muted">{registry.tools.find((t) => t.ref === tool.ref)?.doc}</p>
                 )}
                 {(tool.kind === 'http' || tool.kind === 'mcp') && (
-                  <p className="muted">แก้รายละเอียดได้ใน tab JSON</p>
+                  <p className="muted">แก้รายละเอียดได้ใน JSON</p>
                 )}
               </div>
               {tool.kind !== 'mcp' && (
@@ -289,7 +294,7 @@ function Subagents({ draft, onChange }: Props) {
             />
           </label>
           <div className="row wrap">
-            {names.length === 0 && <span className="muted">เพิ่ม tool ใน tab Tools ก่อน</span>}
+            {names.length === 0 && <span className="muted">เพิ่ม tool ในการ์ด Tools ก่อน</span>}
             {names.map((name) => (
               <label key={name} className="check">
                 <input
@@ -501,11 +506,11 @@ function JsonTab({ draft, onChange }: Props) {
 
   return (
     <>
-      <p className="muted">spec ทั้งก้อนของ agent ตัวนี้ ฟอร์มใน tab อื่นแก้ค่าชุดเดียวกัน</p>
+      <p className="muted">spec ทั้งก้อนของ agent ตัวนี้ การ์ดตั้งค่าแก้ค่าชุดเดียวกัน</p>
       <textarea
         className="code"
         aria-label="AgentSpec JSON"
-        rows={24}
+        rows={22}
         spellCheck={false}
         value={text}
         onChange={(e) => {
@@ -524,46 +529,194 @@ function JsonTab({ draft, onChange }: Props) {
   );
 }
 
-export function ConfigPanel({ resetKey, ...props }: PanelProps) {
-  const [tab, setTab] = useState<Tab>('Basics');
-  // The JSON tab keeps its own text, so remount it whenever another tab changed the draft.
-  const [jsonKey, setJsonKey] = useState(0);
-  useEffect(() => {
-    if (tab !== 'JSON') setJsonKey((key) => key + 1);
-  }, [props.draft, tab]);
+type SectionId = 'model' | 'instructions' | 'tools' | 'guardrails' | 'skills' | 'subagents' | 'limits';
 
-  const counts: Partial<Record<Tab, number>> = {
-    Tools: props.draft.tools.length,
-    Skills: props.draft.skills.length,
-    Subagents: props.draft.subagents.length,
-    Guardrails: props.draft.middleware.length,
-  };
+type Section = {
+  id: SectionId;
+  title: string;
+  /** The parts of the spec this card edits, to tell whether it holds unsaved changes. */
+  keys: (keyof Spec)[];
+  summary: (props: Props) => ReactNode;
+  Body: (props: Props) => ReactNode;
+};
+
+const firstLine = (text: string) => text.split('\n').find((line) => line.trim())?.trim() ?? '';
+const none = <span className="muted">ยังไม่มี</span>;
+
+const SECTIONS: Section[] = [
+  {
+    id: 'model',
+    title: 'Model',
+    keys: ['model'],
+    summary: ({ draft }) => `${draft.model.connection ?? 'environment'} · ${draft.model.ref}`,
+    Body: ModelSection,
+  },
+  {
+    id: 'instructions',
+    title: 'Instructions',
+    keys: ['instructions', 'description'],
+    summary: ({ draft }) => firstLine(draft.instructions) || none,
+    Body: InstructionsSection,
+  },
+  {
+    id: 'tools',
+    title: 'Tools',
+    keys: ['tools', 'hitl'],
+    summary: ({ draft }) =>
+      draft.tools.length === 0
+        ? none
+        : draft.tools.map((tool) => {
+            const name = toolName(tool);
+            return (
+              <span key={name} className="summary-line">
+                {name}
+                {draft.hitl.interrupt_on[name] ? (
+                  <span className="badge warn">ต้องอนุมัติ</span>
+                ) : (
+                  <span className="muted">อัตโนมัติ</span>
+                )}
+              </span>
+            );
+          }),
+    Body: Tools,
+  },
+  {
+    id: 'guardrails',
+    title: 'Guardrails',
+    keys: ['middleware'],
+    summary: ({ draft, registry }) =>
+      draft.middleware.length === 0
+        ? none
+        : draft.middleware.map((m) => (
+            <span key={m.ref} className="badge ok">
+              {registry.middleware.find((entry) => entry.ref === m.ref)?.label ?? m.ref}
+            </span>
+          )),
+    Body: Guardrails,
+  },
+  {
+    id: 'skills',
+    title: 'Skills',
+    keys: ['skills'],
+    summary: ({ draft }) => draft.skills.map((s) => s.name).join(', ') || none,
+    Body: Skills,
+  },
+  {
+    id: 'subagents',
+    title: 'Subagents',
+    keys: ['subagents'],
+    summary: ({ draft }) => draft.subagents.map((s) => s.name).join(', ') || none,
+    Body: Subagents,
+  },
+  {
+    id: 'limits',
+    title: 'ขีดจำกัด',
+    keys: ['limits'],
+    summary: ({ draft }) => `${draft.limits.max_steps} step · ${draft.limits.run_timeout_s} วินาที`,
+    Body: LimitsSection,
+  },
+];
+
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+export function ConfigPanel({
+  saved,
+  resetKey,
+  nextVersion,
+  saving,
+  problems,
+  onSave,
+  onDiscard,
+  onVersions,
+  onDelete,
+  ...props
+}: Props & {
+  saved: Spec;
+  /** Changes when the draft was replaced from outside: saved, rolled back or discarded. */
+  resetKey: number;
+  nextVersion: number;
+  saving: boolean;
+  problems: string[];
+  onSave: () => void;
+  onDiscard: () => void;
+  onVersions: () => void;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState<SectionId | null>(null);
+  const [showJson, setShowJson] = useState(false);
+  const { draft } = props;
+
+  const changed = SECTIONS.filter((section) => section.keys.some((key) => !same(draft[key], saved[key])));
+  const dirty = !same(draft, saved);
 
   return (
-    <section className="config" aria-label="ตั้งค่า agent">
-      <div className="tabs" role="tablist">
-        {TABS.map((name) => (
-          <button
-            key={name}
-            type="button"
-            role="tab"
-            aria-selected={tab === name}
-            className={tab === name ? 'tab active' : 'tab'}
-            onClick={() => setTab(name)}
-          >
-            {name}
-            {counts[name] ? <span className="count">{counts[name]}</span> : null}
+    <aside className="settings" aria-label="ตั้งค่า agent">
+      <div className="settings-head">
+        <span className="settings-title">
+          ตั้งค่า
+          {dirty && <span className="badge warn">แก้ {Math.max(changed.length, 1)} จุด</span>}
+        </span>
+        <div className="row">
+          {dirty && (
+            <button type="button" className="ghost" onClick={onDiscard}>
+              ยกเลิก
+            </button>
+          )}
+          <button type="button" className="primary" disabled={!dirty || saving} onClick={onSave}>
+            บันทึก v{nextVersion}
           </button>
-        ))}
+        </div>
       </div>
-      <div className="tab-body" role="tabpanel">
-        {tab === 'Basics' && <Basics {...props} />}
-        {tab === 'Tools' && <Tools {...props} />}
-        {tab === 'Skills' && <Skills {...props} />}
-        {tab === 'Subagents' && <Subagents {...props} />}
-        {tab === 'Guardrails' && <Guardrails {...props} />}
-        {tab === 'JSON' && <JsonTab key={`${resetKey}-${jsonKey}`} {...props} />}
+      <Problems items={problems} />
+
+      <div className="settings-cards">
+        {SECTIONS.map(({ id, title, summary, Body }) => {
+          const expanded = open === id;
+          const isChanged = changed.some((section) => section.id === id);
+          return (
+            <section key={id} className={isChanged ? 'setting changed' : 'setting'}>
+              <button
+                type="button"
+                className="setting-head"
+                aria-expanded={expanded}
+                onClick={() => setOpen(expanded ? null : id)}
+              >
+                <span className="setting-title">
+                  {title}
+                  {isChanged && <span className="dot" title="ยังไม่บันทึก" />}
+                </span>
+                <span className="chevron" aria-hidden="true">
+                  {expanded ? '−' : '+'}
+                </span>
+                {!expanded && <span className="setting-summary">{summary(props)}</span>}
+              </button>
+              {expanded && (
+                <div className="setting-body">
+                  <Body {...props} />
+                </div>
+              )}
+            </section>
+          );
+        })}
       </div>
-    </section>
+
+      <div className="settings-foot">
+        <button type="button" className="ghost" onClick={onVersions}>
+          เวอร์ชัน
+        </button>
+        <button type="button" className="ghost" onClick={() => setShowJson(true)}>
+          JSON
+        </button>
+        <button type="button" className="ghost danger" onClick={onDelete}>
+          ลบ agent
+        </button>
+      </div>
+
+      {showJson && (
+        <Modal title={`JSON ของ ${draft.name}`} wide onClose={() => setShowJson(false)}>
+          <JsonTab key={resetKey} {...props} />
+        </Modal>
+      )}
+    </aside>
   );
 }

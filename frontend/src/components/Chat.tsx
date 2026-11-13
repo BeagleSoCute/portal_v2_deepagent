@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import Markdown from 'react-markdown';
+import { Link } from 'react-router-dom';
 import { messageOf, streamRun, type ActionRequest, type RunEvent, type Spec } from '../api';
 
 type Item =
@@ -72,7 +73,7 @@ function Approval({
   const [problem, setProblem] = useState('');
 
   if (item.state !== 'pending') {
-    const label = { approved: 'อนุมัติแล้ว', rejected: 'ปฏิเสธแล้ว', edited: 'แก้ args แล้วอนุมัติ' }[item.state];
+    const label = { approved: 'อนุมัติแล้ว', rejected: 'ปฏิเสธแล้ว', edited: 'แก้ค่าแล้วอนุมัติ' }[item.state];
     return <p className="chat-meta">{label}: {item.actions.map((a) => a.name).join(', ')}</p>;
   }
 
@@ -86,11 +87,19 @@ function Approval({
 
   return (
     <div className="approval">
-      <strong>รออนุมัติก่อนเรียก tool</strong>
       {item.actions.map((action, index) => (
-        <code key={index} className="call">
-          {action.name}({JSON.stringify(action.args)})
-        </code>
+        <div key={index}>
+          <strong>ขออนุมัติก่อนเรียก {action.name}</strong>
+          <dl className="args">
+            {Object.entries(action.args).map(([key, value]) => (
+              <div key={key}>
+                <dt>{key}</dt>
+                <dd>{typeof value === 'string' ? value : JSON.stringify(value)}</dd>
+              </div>
+            ))}
+            {Object.keys(action.args).length === 0 && <dd className="muted">ไม่มี argument</dd>}
+          </dl>
+        </div>
       ))}
       {editing && (
         <>
@@ -110,7 +119,7 @@ function Approval({
         {editing ? (
           <>
             <button type="button" className="primary" disabled={busy} onClick={submitEdit}>
-              อนุมัติด้วย args นี้
+              อนุมัติด้วยค่านี้
             </button>
             <button type="button" onClick={() => setEditing(false)}>
               ยกเลิก
@@ -121,11 +130,11 @@ function Approval({
             <button type="button" className="primary" disabled={busy} onClick={() => onDecide('accept')}>
               อนุมัติ
             </button>
+            <button type="button" disabled={busy} onClick={() => setEditing(true)}>
+              แก้ค่า
+            </button>
             <button type="button" disabled={busy} onClick={() => onDecide('reject')}>
               ปฏิเสธ
-            </button>
-            <button type="button" disabled={busy} onClick={() => setEditing(true)}>
-              แก้ args
             </button>
           </>
         )}
@@ -134,7 +143,24 @@ function Approval({
   );
 }
 
-export function Chat({ agentId, draft, dirty }: { agentId: string; draft: Spec; dirty: boolean }) {
+export function Chat({
+  agentId,
+  draft,
+  dirty,
+  title,
+  subtitle,
+  version,
+  needsConnection,
+}: {
+  agentId: string;
+  draft: Spec;
+  dirty: boolean;
+  title: string;
+  subtitle: string;
+  version: number;
+  /** No LLM is set up yet, so a message could only fail. */
+  needsConnection: boolean;
+}) {
   const [items, setItems] = useState<Item[]>([]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -143,7 +169,7 @@ export function Chat({ agentId, draft, dirty }: { agentId: string; draft: Spec; 
   const bottom = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottom.current?.scrollIntoView({ block: 'end' });
+    if (items.length > 0) bottom.current?.scrollIntoView({ block: 'end' });
   }, [items]);
 
   useEffect(() => () => abort.current?.abort(), []);
@@ -196,21 +222,29 @@ export function Chat({ agentId, draft, dirty }: { agentId: string; draft: Spec; 
 
   return (
     <section className="chat" aria-label="ทดลองแชท">
-      <div className="chat-head">
-        <span>
-          ทดลองแชท
-          {dirty && <span className="badge warn">ใช้ draft ที่ยังไม่บันทึก</span>}
-        </span>
-        <button type="button" className="ghost" onClick={reset}>
-          เริ่มห้องใหม่
+      <header className="chat-head">
+        <div className="chat-title">
+          <h1>{title}</h1>
+          <span className="badge">v{version}</span>
+          {dirty && <span className="badge warn">กำลังลอง draft ที่ยังไม่บันทึก</span>}
+          <p className="muted">{subtitle}</p>
+        </div>
+        <button type="button" onClick={reset}>
+          ห้องใหม่
         </button>
-      </div>
+      </header>
 
       <div className="chat-log" aria-live="polite">
-        {items.length === 0 && (
-          <p className="muted chat-empty">
-            พิมพ์ข้อความเพื่อลอง agent ตัวนี้ การแก้ค่าทางซ้ายมีผลกับข้อความถัดไปทันที
+        {needsConnection && (
+          <p className="notice">
+            ยังไม่มี LLM connection agent จะตอบไม่ได้จนกว่าจะ <Link to="/connections">เพิ่ม connection</Link>
           </p>
+        )}
+        {items.length === 0 && (
+          <div className="chat-empty">
+            <p className="chat-empty-title">ลองคุยกับ {title}</p>
+            <p className="muted">การแก้ค่าทางขวามีผลกับข้อความถัดไปทันที ยังไม่ต้องบันทึก</p>
+          </div>
         )}
         {items.map((item, index) => {
           if (item.type === 'user') return <div key={index} className="bubble user">{item.text}</div>;
@@ -230,8 +264,8 @@ export function Chat({ agentId, draft, dirty }: { agentId: string; draft: Spec; 
             return (
               <details key={index} className="tool-call">
                 <summary>
-                  <span className="badge">tool</span> {item.name}
-                  <span className="muted"> {item.result === undefined ? '· รอผล' : '· มีผลแล้ว'}</span>
+                  <span className={item.result === undefined ? 'pulse' : 'pulse done'} aria-hidden="true" />
+                  {item.result === undefined ? 'กำลังเรียก' : 'เรียก'} <code>{item.name}</code>
                 </summary>
                 <pre>{JSON.stringify(item.args, null, 2)}</pre>
                 {item.result !== undefined && <pre className="result">{item.result}</pre>}
@@ -249,16 +283,18 @@ export function Chat({ agentId, draft, dirty }: { agentId: string; draft: Spec; 
       </div>
 
       <form className="chat-input" onSubmit={send}>
-        <input
-          aria-label="ข้อความถึง agent"
-          placeholder={waiting ? 'ตัดสินใจเรื่องการอนุมัติก่อน' : 'ถาม agent ตัวนี้'}
-          value={text}
-          disabled={waiting}
-          onChange={(e) => setText(e.target.value)}
-        />
-        <button type="submit" className="primary" disabled={busy || waiting || !text.trim()}>
-          ส่ง
-        </button>
+        <div className="composer">
+          <input
+            aria-label="ข้อความถึง agent"
+            placeholder={waiting ? 'ตัดสินใจเรื่องการอนุมัติก่อน' : `ถาม ${title}`}
+            value={text}
+            disabled={waiting}
+            onChange={(e) => setText(e.target.value)}
+          />
+          <button type="submit" className="send" aria-label="ส่ง" disabled={busy || waiting || !text.trim()}>
+            ↑
+          </button>
+        </div>
       </form>
     </section>
   );

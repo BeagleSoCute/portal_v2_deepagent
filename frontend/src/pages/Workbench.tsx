@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError, messageOf, type Connection, type Registry, type Spec } from '../api';
+import { useAgents } from '../agents';
 import { Chat } from '../components/Chat';
 import { ConfigPanel } from '../components/ConfigPanel';
 import { Modal } from '../components/Modal';
@@ -57,6 +58,8 @@ function Versions({
 
 export function Workbench() {
   const { id = '' } = useParams();
+  const navigate = useNavigate();
+  const { agents, reload } = useAgents();
   const [saved, setSaved] = useState<Spec | null>(null);
   const [draft, setDraft] = useState<Spec | null>(null);
   const [registry, setRegistry] = useState<Registry | null>(null);
@@ -74,6 +77,8 @@ export function Workbench() {
   }, []);
 
   useEffect(() => {
+    setSaved(null);
+    setDraft(null);
     Promise.all([api.agent(id), api.registry(), api.connections()])
       .then(([spec, reg, conns]) => {
         load(spec);
@@ -92,12 +97,14 @@ export function Workbench() {
   }
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+  const versions = agents?.find((agent) => agent.id === id)?.versions ?? [saved.version];
 
   async function save() {
     if (!draft) return;
     setSaving(true);
     try {
       load(await api.saveAgent(id, draft));
+      await reload();
     } catch (error) {
       setProblems(error instanceof ApiError ? error.problems : [messageOf(error)]);
     } finally {
@@ -105,46 +112,48 @@ export function Workbench() {
     }
   }
 
+  async function remove() {
+    if (!saved || !window.confirm(`ลบ agent ${saved.name} และทุกเวอร์ชันของมัน? ลบแล้วกู้คืนไม่ได้`)) return;
+    try {
+      await api.deleteAgent(id);
+      await reload();
+      navigate('/');
+    } catch (error) {
+      setProblems([messageOf(error)]);
+    }
+  }
+
   return (
     <main className="workbench">
-      <div className="workbench-head">
-        <div>
-          <Link to="/" className="muted">
-            Agents
-          </Link>
-          <span className="muted"> / </span>
-          <h1>{saved.name}</h1>
-          <span className="badge ok">v{saved.version}</span>
-          {dirty && <span className="badge warn">มีการแก้ที่ยังไม่บันทึก</span>}
-        </div>
-        <div className="row">
-          <button type="button" onClick={() => setShowVersions(true)}>
-            เวอร์ชัน
-          </button>
-          {dirty && (
-            <button type="button" onClick={() => load(saved)}>
-              ยกเลิกการแก้
-            </button>
-          )}
-          <button type="button" className="primary" disabled={!dirty || saving} onClick={() => void save()}>
-            บันทึกเป็นเวอร์ชันใหม่
-          </button>
-        </div>
-      </div>
-      <Problems items={problems} />
-      <div className="workbench-body">
-        <ConfigPanel
-          resetKey={resetKey}
-          draft={draft}
-          registry={registry}
-          connections={connections}
-          onChange={(next) => {
-            setDraft(next);
-            setProblems([]);
-          }}
-        />
-        <Chat key={id} agentId={id} draft={draft} dirty={dirty} />
-      </div>
+      <Chat
+        key={`chat-${id}`}
+        agentId={id}
+        draft={draft}
+        dirty={dirty}
+        title={saved.name}
+        subtitle={draft.description}
+        version={saved.version}
+        needsConnection={connections.length === 0 && !draft.model.connection}
+      />
+      <ConfigPanel
+        key={`settings-${id}`}
+        draft={draft}
+        saved={saved}
+        registry={registry}
+        connections={connections}
+        resetKey={resetKey}
+        nextVersion={Math.max(...versions) + 1}
+        saving={saving}
+        problems={problems}
+        onChange={(next) => {
+          setDraft(next);
+          setProblems([]);
+        }}
+        onSave={() => void save()}
+        onDiscard={() => load(saved)}
+        onVersions={() => setShowVersions(true)}
+        onDelete={() => void remove()}
+      />
       {showVersions && (
         <Versions
           agentId={id}
@@ -152,6 +161,7 @@ export function Workbench() {
           onActivated={(spec) => {
             load(spec);
             setShowVersions(false);
+            void reload();
           }}
         />
       )}
